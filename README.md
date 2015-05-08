@@ -1,4 +1,11 @@
-## Telegram messenger CLI for pytg2 (soon called "telejson")
+## Telejson (formaly called tg-for-pytg2)
+
+# Changed Project URL: [https://github.com/luckydonald/telejson](https://github.com/luckydonald/telejson)
+
+To update your local clone, type 
+``` sh
+git remote set-url origin https://github.com/luckydonald/telejson.git
+```
 
 Modified version of Telegram-CLI, which sends you the events as json.    
 
