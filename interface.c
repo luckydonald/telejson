@@ -63,6 +63,7 @@
 
 #include <tgl/tgl.h>
 #include "loop.h"
+#include "tgl/tgl.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -151,7 +152,7 @@ void socket_answer_add_printf (const char *format, ...) {
 }
 
 void socket_answer_end (struct in_ev *ev) {
-  if (ev->bev && socket_answer_pos > 0) {
+  if (ev->bev) {
     static char s[100];
     sprintf (s, "ANSWER %d\n", socket_answer_pos);
     bufferevent_write (ev->bev, s, strlen (s));
@@ -1221,7 +1222,7 @@ struct command commands[] = {
   {"view_video", {ca_number, ca_none}, do_open_video, "view_video <msg-id>\tDownloads file to downloads dirs. Then tries to open it with system default action"},
   {"view_video_thumb", {ca_number, ca_none}, do_open_video_thumb, "view_video_thumb <msg-id>\tDownloads file to downloads dirs. Then tries to open it with system default action"},
   {"visualize_key", {ca_secret_chat, ca_none}, do_visualize_key, "visualize_key <secret chat>\tPrints visualization of encryption key (first 16 bytes sha1 of it in fact}"},
-  {0, {ca_none}, 0, ""}
+  {0, {ca_none}, 0, ""} // To stop it.
 };
 
 
@@ -2190,35 +2191,66 @@ void interpreter_ex (char *line, void *ex) {
   if (line && *line) {
     add_history (line);
   }
-  
-  if (*line == '(') { 
+  if (*line == '(') {
     struct in_ev *ev = ex;
     if (ev) { ev->refcnt ++; }
     tgl_do_send_extf (TLS, line, strlen (line), callback_extf, ev);
+	  mprint_start (ev);
+	  mpush_color (ev, COLOR_YELLOW);
+	  mprintf (ev, "INFO 01: Executed raw input.\n");
+	  mpop_color(ev);
+	  mprint_end(ev);
+	  update_prompt();
     in_readline = 0;
-    return; 
+    return;
   }
-
+	struct in_ev *ev = ex;
+  //if (ev) { printf("is ev (%i)\n", ev->refcnt); ev->refcnt ++; }
+  /*
+  if (ev && !--ev->refcnt) {
+	free (ev);
+	return;
+  }
+  */
   while (1) {
     next_token ();
-    if (cur_token_quoted) { 
-      in_readline = 0;
-      return; 
+    if (cur_token_quoted) {
+		mprint_start (ev);
+		mpush_color (ev, COLOR_REDB);
+		mprintf (ev, "ERROR 02: Line starting with quote.\n");
+		mpop_color(ev);
+		mprint_end(ev);
+		update_prompt();
+      	in_readline = 0;
+		return;
     }
 
-    if (cur_token_len <= 0) { 
-      in_readline = 0;
-      return; 
+    if (cur_token_len <= 0) {
+		mprint_start (ev);
+		mpush_color (ev, COLOR_REDB);
+		mprintf (ev, "ERROR 03: Empty Line\n");
+		mpop_color(ev);
+		mprint_end(ev);
+		update_prompt();
+		in_readline = 0;
+		return;
     }
     
     if (*cur_token == '[') {
       if (cur_token_end_str) {
         in_readline = 0;
-        return; 
+		printf("Unhandeled return #04\n");
+		return;
       }
       if (cur_token[cur_token_len - 1] != ']') {
+		  mprint_start (ev);
+		  mpush_color (ev, COLOR_REDB);
+		  mprintf (ev, "ERROR 05: Line starting with '[' does not close the comment with ']'.\n");
+		  mpop_color(ev);
+		  mprint_end(ev);
+		  update_prompt();
         in_readline = 0;
-        return; 
+		  return;
       }
       work_modifier (cur_token, cur_token_len);
       continue;
@@ -2227,7 +2259,8 @@ void interpreter_ex (char *line, void *ex) {
   }
   if (cur_token_quoted || cur_token_end_str) { 
     in_readline = 0;
-    return; 
+	  printf("Unhandeled return #06\n");
+	  return;
   }
     
     
@@ -2244,8 +2277,15 @@ void interpreter_ex (char *line, void *ex) {
   }
   
   if (!command->name) {
-    in_readline = 0;
-    return; 
+
+	  mprint_start (ev);
+	  mpush_color (ev, COLOR_REDB);
+	  mprintf (ev, "ERROR 07: Command not found\n");
+	  mpop_color(ev);
+	  mprint_end(ev);
+	  update_prompt ();
+	  in_readline = 0;
+	  return;
   }
 
   enum command_argument *flags = command->args;
@@ -2271,12 +2311,28 @@ void interpreter_ex (char *line, void *ex) {
           fun (args_num, args, ex);
         }
       }
+		// if (ev) { ev->refcnt ++; }
+		// mprint_start (ev);
+		// mpush_color (ev, COLOR_GREEN);
+		// mprintf (ev, "INFO 08: Executed argument less function.\n");
+		// mpop_color(ev);
+		// mprint_end(ev);
+		// if (ev && !--ev->refcnt) {
+		// 	free (ev);
+		// 	return;
+		// }
+
       break;
     }
       
     if (op == ca_string_end || op == ca_file_name_end) {
       next_token_end ();
-      if (cur_token_len < 0) { 
+      if (cur_token_len < 0) {
+		  mprint_start (ev);
+		  mpush_color (ev, COLOR_REDB);
+		  mprintf (ev, "ERROR 09: To many arguments.\n");
+		  mpop_color(ev);
+		  mprint_end(ev);
         break;
       } else {
         args[args_num].flags = 1;
@@ -2285,6 +2341,12 @@ void interpreter_ex (char *line, void *ex) {
         for (z = 0; z < count; z ++) {
           fun (args_num, args, ex);
         }
+		  //mprint_start (ev);
+		  //mpush_color (ev, COLOR_GREEN);
+		  //mprintf (ev, "INFO 10: Executed function.\n");
+		  //mpop_color(ev);
+		  //mprint_end(ev);
+		  //did execute!
         break;
       }
     }
@@ -2297,6 +2359,7 @@ void interpreter_ex (char *line, void *ex) {
       for (z = 0; z < count; z ++) {
         fun (args_num, args, ex);
       }
+		printf("Unhandeled break #11\n");
       break;
     }
 
@@ -2315,11 +2378,16 @@ void interpreter_ex (char *line, void *ex) {
           line_ptr = save;
           flags ++;
           continue;
-        } else if (period) {
+        } else if (period) { // <arg>+
           line_ptr = save;
           flags += 2;
           continue;
         } else {
+			mprint_start (ev);
+			mpush_color (ev, COLOR_REDB);
+			mprintf (ev, "ERROR 12: Parameter %i should not be quoted.\n", args_num + 1);
+			mpop_color(ev);
+			mprint_end(ev);
           break;
         }
       } else {
@@ -2342,6 +2410,7 @@ void interpreter_ex (char *line, void *ex) {
             flags += 2;
             continue;
           } else {
+			  printf("Unhandeled break #13\n");
             break;
           }
         }
@@ -2387,6 +2456,11 @@ void interpreter_ex (char *line, void *ex) {
           continue;
         }
         if (!ok) {
+			mprint_start (ev);
+			mpush_color (ev, COLOR_REDB);
+			mprintf (ev, "ERROR 14: Parameter %i wrong.\n", args_num);
+			mpop_color(ev);
+			mprint_end(ev);
           break;
         }
 
@@ -2396,7 +2470,8 @@ void interpreter_ex (char *line, void *ex) {
     }
     if (op == ca_string || op == ca_file_name) {
       if (cur_token_end_str || cur_token_len < 0) {
-        break;
+		  printf("Unhandeled break #15\n");
+		  break;
       } else {
         args[args_num].flags = 1;
         args[args_num ++].str = strndup (cur_token, cur_token_len);
