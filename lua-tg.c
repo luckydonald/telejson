@@ -113,8 +113,11 @@ void lua_init(const char *address_string);
 void lua_new_msg (struct tgl_message *M);
 void lua_file_callback (struct tgl_state *TLSR, void *cb_extra, int success, char *file_name);
 
+int valid_digit(char *ip_str);
+int is_valid_ip(char *ip_str);
 char* expand_escapes_alloc(const char* src);
 char* malloc_formated(char const *format, ...);
+
 
 void push_message (struct tgl_message *M);
 void push_chat_info (struct tgl_chat *C);
@@ -322,16 +325,21 @@ void socket_init (char *address_string)
 {
 	if (address_string == NULL)
 	{
-		printf("No address and no port given.\n");
+		printf(COLOR_REDB "No address and no port given.\n" COLOR_NORMAL);
 		exit(3);
 	}
 	char *port_pos = NULL;
 	uint16_t port = DEFAULT_PORT;
 	strtok(address_string, ":");
 	port_pos = strtok(NULL, ":"); //why is it needed doubled?
+	int valid = is_valid_ip(address_string);
+	if (!valid) {
+		printf(COLOR_REDB "Invalid IP address given.\n" COLOR_NORMAL);
+		exit(3);
+	}
 	if (port_pos == NULL)
 	{
-		printf("Address: \"%s\", no port given, using port %i instead.\n", address_string, port);
+		printf(COLOR_YELLOW "Address: \"%s\", no port given, using port %i instead.\n" COLOR_NORMAL, address_string, port);
 	}
 	else
 	{
@@ -344,7 +352,7 @@ void socket_init (char *address_string)
 	}
 	memset((void *) &serv_addr, 0, sizeof(struct sockaddr_in));
 	serv_addr.sin_family = AF_INET; //still TCP
-	inet_pton(AF_INET, address_string, &(serv_addr.sin_addr)); //copy the adress.
+	inet_pton(AF_INET, address_string, &(serv_addr.sin_addr)); //copy the adress. //TODO: error validation?
 	serv_addr.sin_port = (in_port_t) htons((uint16_t) port);
 }
 
@@ -1118,4 +1126,81 @@ void lua_binlog_end (void) {
 void lua_chat_update (struct tgl_chat *C, unsigned flags) {
 	if (!have_address) { return; }
 	return;
+}
+
+
+//www.geeksforgeeks.org/program-to-validate-an-ip-address/
+/* return 1 if string contain only digits, else return 0 */
+int valid_digit(char *ip_str)
+{
+	while (*ip_str) {
+		if (*ip_str >= '0' && *ip_str <= '9')
+			++ip_str;
+		else
+			return 0;
+	}
+	return 1;
+}
+
+#define IP_DELIM "."
+
+//www.geeksforgeeks.org/program-to-validate-an-ip-address/
+/* return 1 if IP string is valid, else return 0 */
+int is_valid_ip(char *ip_str)
+{
+	if (ip_str == NULL) {
+		return 0;
+	}
+	int num, dots = 0;
+	char *ptr;
+
+	char *ip_str_copy = malloc(sizeof(char) * strnlen(ip_str, 16)); //copy because we modify the string. 123.567.901.345\0 = 15 + \0 = 16
+	strncpy(ip_str_copy, ip_str, 16);
+	ptr = ip_str_copy + 16;
+	*ptr = '\0'; //force null-termination.
+
+
+	if (ip_str_copy == NULL) {
+		free(ip_str_copy);
+		return 0;
+	}
+	// See following link for strtok()
+	// http://pubs.opengroup.org/onlinepubs/009695399/functions/strtok_r.html
+	ptr = strtok(ip_str_copy, IP_DELIM);
+
+	if (ptr == NULL) {
+		free(ip_str_copy);
+		return 0;
+	}
+
+	while (ptr)
+	{
+
+		/* after parsing string, it must contain only digits */
+		if (!valid_digit(ptr)) {
+			free(ip_str_copy);
+			return 0;
+		}
+
+		num = atoi(ptr);
+
+		/* check for valid IP */
+		if (num >= 0 && num <= 255) {
+			/* parse remaining string */
+			ptr = strtok(NULL, IP_DELIM);
+			if (ptr != NULL) {
+				++dots;
+			}
+		} else {
+			free(ip_str_copy);
+			return 0;
+		}
+	}
+	/* valid IP string must contain 3 dots */
+	if (dots != 3) {
+		free(ip_str_copy);
+		return 0;
+	}
+	free(ip_str_copy);
+	return 1;
 }
