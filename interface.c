@@ -1618,8 +1618,11 @@ void open_filename_gw (struct tgl_state *TLSR, void *extra, int success, char *n
   }
 }
 
-void print_chat_info_gw (struct tgl_state *TLSR, void *extra, int success, struct tgl_chat *C) {
+void print_chat_info_gw (struct tgl_state *TLSR, void *extra, int success, struct tgl_chat *C) {   
   assert (TLS == TLSR);
+  #ifdef USE_LUA
+    lua_new_chat_info (C);
+  #endif
   struct in_ev *ev = extra;
   if (ev && !--ev->refcnt) {
     free (ev);
