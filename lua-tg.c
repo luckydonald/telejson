@@ -66,6 +66,7 @@ echo -e "\n\n\n" && gcc -I. -I. -g -O2  -I/usr/local/include -I/usr/include -I/u
 #include <assert.h>
 
 #include <sys/errno.h>
+#include <lua.h>
 
 
 
@@ -227,7 +228,7 @@ void lua_new_msg (struct tgl_message *M)
 	printf("Generating Message...\n");
 	push("{\"event\":\"message\", ");
 	push_freshness();
-	if (M->flags & FLAG_CREATED)
+	if (M->flags & TGLUF_CREATED)
 	{
 		push(",");
 		push_message (M);
@@ -620,6 +621,9 @@ void push_user (tgl_peer_t *P) {
 	escaped_caption = expand_escapes_alloc(format_string_or_null(P->user.real_last_name));
 	push("\"real_last_name\": \"%s\", ",escaped_caption);
 	free(escaped_caption);
+	escaped_caption = expand_escapes_alloc(format_string_or_null(P->user.username));
+	push("\"username\": \"%s\", ",escaped_caption);
+	free(escaped_caption);
 	push("\"phone\":\"%s\"", format_string_or_null(P->user.phone));
 }
 void push_chat_info (struct tgl_chat *C) {
@@ -661,10 +665,9 @@ void push_peer (tgl_peer_id_t id) {
 
 	tgl_peer_t *P = tgl_peer_get(TLS, id);
 	//P is defined -> did not return.
-	if (P && (P->flags & FLAG_CREATED))
+	if (P && (P->flags & TGLPF_CREATED))
 	{
 		push("\"%s\", ", tgl_peer_get(TLS, id)->print_name); //print_name
-
 		switch (tgl_get_peer_type(id))
 		{
 			case TGL_PEER_USER:
@@ -704,6 +707,8 @@ void push_peer_cmd(tgl_peer_id_t id) {
 
 void push_geo(struct tgl_geo geo) {
 	push("\"longitude\": %f, \"latitude\": %f", geo.longitude, geo.latitude);
+	push(",\"google\": \"https://maps.google.com/?q=%.6lf,%.6lf\"", geo.latitude, geo.longitude);
+
 }
 void push_size(int size){
 	push("\"size\":\"");
@@ -720,45 +725,57 @@ void push_size(int size){
 }
 
 
+void lua_add_string_field(char *key, char *string)
+{
+	if (string == NULL) {
+		push("\"%s\":null", key);
+	}
+	else
+	{
+		char *escaped_caption = expand_escapes_alloc(format_string_or_null(string));
+		push("\"%s\":\"%s\"", key, escaped_caption);
+		free(escaped_caption);
+	}
+}
+
+void lua_add_double_field(char *key, double long_integer)
+{
+	push("\"%s\":\"%f\"", key, long_integer);
+}
+void lua_add_int_field(char *key, int integer)
+{
+	push("\"%s\":\"%d\"", key, integer);
+}
+void lua_add_bool_field(char *key, int boolean)
+{
+	push("\"%s\":\"%s\"", key, format_bool(boolean));
+}
+void lua_add_null_field(char *key)
+{
+	push("\"%s\":null", key);
+}
+
 void push_media(struct tgl_message_media *M, long long int *msg_id)
 {
 	push("{");
 	long long int *msg_id_copy;
 	switch (M->type) {
 		case tgl_message_media_photo:
-			push("\"type\": \"photo\", \"encrypted\": false");
-			if (M->photo.caption && strlen (M->photo.caption))
-			{
-				char *escaped_caption = expand_escapes_alloc(M->photo.caption);
-				push (", \"caption\":\"%s\"", escaped_caption); //file name afterwards.
-				free(escaped_caption);
-			}
+			push("\"type\":\"photo\",\"encrypted\": false,");
+			lua_add_string_field("caption",M->caption);
 			msg_id_copy = malloc(sizeof(*msg_id));
 			memcpy(msg_id_copy, msg_id, sizeof(*msg_id));
-			tgl_do_load_photo (TLS, &M->photo, lua_file_callback, msg_id_copy);
+			tgl_do_load_photo (TLS, M->photo, lua_file_callback, msg_id_copy);
 			break;
-		case tgl_message_media_photo_encr:
-			push("\"type\": \"photo\", \"encrypted\": true");
-			break;
-			/*case tgl_message_media_video:
-			  case tgl_message_media_video_encr:
-				lua_newtable (luaState);
-				lua_add_string_field ("type", "video");
-				break;
-			  case tgl_message_media_audio:
-			  case tgl_message_media_audio_encr:
-				lua_newtable (luaState);
-				lua_add_string_field ("type", "audio");
-				break;*/
 		case tgl_message_media_document:
 			push("\"type\": \"document\", \"encrypted\": false, \"document\":\"");
-			if (M->document.flags & FLAG_DOCUMENT_IMAGE) {
+			if (M->document->flags & FLAG_DOCUMENT_IMAGE) {
 				push("image");
-			} else if (M->document.flags & FLAG_DOCUMENT_AUDIO) {
+			} else if (M->document->flags & FLAG_DOCUMENT_AUDIO) {
 				push("audio");
-			} else if (M->document.flags & FLAG_DOCUMENT_VIDEO) {
+			} else if (M->document->flags & FLAG_DOCUMENT_VIDEO) {
 				push("video");
-			} else if (M->document.flags & FLAG_DOCUMENT_STICKER) {
+			} else if (M->document->flags & FLAG_DOCUMENT_STICKER) {
 				push("sticker");
 			} else {
 				push("document");
@@ -766,36 +783,34 @@ void push_media(struct tgl_message_media *M, long long int *msg_id)
 			push("\"");
 			msg_id_copy = malloc(sizeof(*msg_id));
 			memcpy(msg_id_copy, msg_id, sizeof(*msg_id));
-			tgl_do_load_document (TLS, &M->document, lua_file_callback, msg_id_copy); // will download & insert file name.
-			if (M->document.caption && strlen (M->document.caption)) {
-				char *escaped_caption = expand_escapes_alloc(M->document.caption);
-				push(", \"caption\":\"%s\"", escaped_caption);
-				free(escaped_caption);
+			tgl_do_load_document (TLS, M->document, lua_file_callback, msg_id_copy); // will download & insert file name.
+			if (M->document->caption && strlen (M->document->caption)) {
+				push(",");
+				lua_add_string_field("file_name", M->document->caption);
+			}
+			if (M->document->mime_type) {
+				push(", \"mime\":\"%s\"", M->document->mime_type);
 			}
 
-			if (M->document.mime_type) {
-				push(", \"mime\":\"%s\"", M->document.mime_type);
+			if (M->document->w && M->document->h) {
+				push(", \"dimension\":{\"width\":%d,\"height\":%d}", M->document->w, M->document->h);
 			}
 
-			if (M->document.w && M->document.h) {
-				push(", \"dimension\":{\"width\":%d,\"height\":%d}", M->document.w, M->document.h);
-			}
-
-			if (M->document.duration) {
-				push(", \"duration\":%d", M->document.duration);
+			if (M->document->duration) {
+				push(", \"duration\":%d", M->document->duration);
 			}
 			push(", ");
-			push_size(M->document.size);
+			push_size(M->document->size);
 			break;
 		case tgl_message_media_document_encr:
 			push("\"type\": \"document\", \"encrypted\": true, \"document\":\"");
-			if (M->encr_document.flags & FLAG_DOCUMENT_IMAGE) {
+			if (M->encr_document->flags & FLAG_DOCUMENT_IMAGE) {
 				push("image");
-			} else if (M->encr_document.flags & FLAG_DOCUMENT_AUDIO) {
+			} else if (M->encr_document->flags & FLAG_DOCUMENT_AUDIO) {
 				push("audio");
-			} else if (M->encr_document.flags & FLAG_DOCUMENT_VIDEO) {
+			} else if (M->encr_document->flags & FLAG_DOCUMENT_VIDEO) {
 				push("video");
-			} else if (M->encr_document.flags & FLAG_DOCUMENT_STICKER) {
+			} else if (M->encr_document->flags & FLAG_DOCUMENT_STICKER) {
 				push("sticker");
 			} else {
 				push("document");
@@ -803,27 +818,26 @@ void push_media(struct tgl_message_media *M, long long int *msg_id)
 			push("\""); //end of document's value, next is file name.
 			msg_id_copy = malloc(sizeof(*msg_id));
 			memcpy(msg_id_copy, msg_id, sizeof(*msg_id));
-			tgl_do_load_encr_document (TLS, &M->encr_document, lua_file_callback, msg_id_copy); // will download & insert file name.
+			tgl_do_load_encr_document (TLS, M->encr_document, lua_file_callback, msg_id_copy); // will download & insert file name.
 			//TODO: wait until the callback pushed the filename.
-			if (M->encr_document.caption && strlen (M->document.caption)) {
-				char *escaped_caption = expand_escapes_alloc(M->document.caption);
-				push(", \"caption\":\"%s\"", escaped_caption);
-				free(escaped_caption);
+			if (M->encr_document->caption && strlen (M->encr_document->caption)) {
+				push(",");
+				lua_add_string_field("file_name", M->encr_document->caption);
 			}
 
-			if (M->encr_document.mime_type) {
-				push(", \"mime\":\"%s\"", M->document.mime_type);
+			if (M->encr_document->mime_type) {
+				push(", \"mime\":\"%s\"", M->document->mime_type);
 			}
 
-			if (M->encr_document.w && M->document.h) {
-				push(", \"dimension\":{\"width\":%d,\"height\":%d}", M->document.w, M->document.h);
+			if (M->encr_document->w && M->document->h) {
+				push(", \"dimension\":{\"width\":%d,\"height\":%d}", M->document->w, M->document->h);
 			}
 
-			if (M->encr_document.duration) {
-				push(", \"duration\":%d", M->encr_document.duration);
+			if (M->encr_document->duration) {
+				push(", \"duration\":%d", M->encr_document->duration);
 			}
 			push(", ");
-			push_size(M->encr_document.size);
+			push_size(M->encr_document->size);
 			break;
 		case tgl_message_media_unsupported:
 			push("\"type\": \"unsupported\"");
@@ -831,20 +845,38 @@ void push_media(struct tgl_message_media *M, long long int *msg_id)
 		case tgl_message_media_geo:
 			push("\"type\": \"geo\", ");
 			push_geo(M->geo);
-			push(", \"google\":\"https://maps.google.com/?q=%.6lf,%.6lf\"", M->geo.latitude, M->geo.longitude);
 			break;
 		case tgl_message_media_contact:
-			push("\"type\": \"contact\", \"phone\": \"%s\", \"first_name\": \"%s\", \"last_name\": \"%s\", \"user_id\": %i",  M->phone, M->first_name, M->last_name, M->user_id);
+			push("\"type\": \"contact\", \"phone\": \"%s\",",M->phone);
+			lua_add_string_field("first_name",  M->first_name); push(",");
+			lua_add_string_field("last_name",  M->last_name); push(",");
+			lua_add_int_field("user_id",  M->user_id);
 			break;
+		case tgl_message_media_webpage:
+			lua_add_string_field ("type", "webpage"); push(",");
+			lua_add_string_field ("url", M->webpage->url); push(",");
+			lua_add_string_field ("title", M->webpage->title); push(",");
+			lua_add_string_field ("description", M->webpage->description); push(",");
+			lua_add_string_field ("author", M->webpage->author);
+			break;
+		case tgl_message_media_venue:
+			lua_add_string_field ("type", "venue"); push(",");
+			push_geo(M->venue.geo); push(",");
+			lua_add_string_field ("title", M->venue.title); push(",");
+			lua_add_string_field ("address", M->venue.address); push(",");
+			lua_add_string_field ("provider", M->venue.provider); push(",");
+			lua_add_string_field ("venue_id", M->venue.venue_id);
+			break;
+
 		default:
-			push("\"type\": \"\?\?\?\", \"typeid\":\"%d\"", M->type); //escaped "???" to avoid Trigraph. (see http://stackoverflow.com/a/1234618 )
+			push("\"type\": \"\?\?\?\", \"type_id\":\"%d\"", M->type); //escaped "???" to avoid Trigraph. (see http://stackoverflow.com/a/1234618 )
 			break;
 	}
 	push("}");
 }
 
 void push_message (struct tgl_message *M) {
-	if (!(M->flags & FLAG_CREATED)) {
+	if (!(M->flags & TGLUF_CREATED)) {
 		return;
 	}
 	push("\"id\":%lld, \"flags\": %i, \"forward\":", M->id, M->flags);
@@ -855,16 +887,23 @@ void push_message (struct tgl_message *M) {
 	} else {
 		push("null");
 	}
+	if (M->reply_id) {
+		push(",");
+		lua_add_int_field ("reply_id", M->reply_id);
+	}
+
+	push(",");
+	lua_add_bool_field ("mention", (M->flags & TGLMF_MENTION));
 	push(", \"sender\":");
 	push_peer (M->from_id);
 	push(", \"receiver\":");
 	push_peer (M->to_id);
-	if(!M->out && (tgl_get_peer_type(M->to_id) == TGL_PEER_CHAT || tgl_get_peer_type(M->to_id) == TGL_PEER_GEO_CHAT))
+	if(!(M->flags & TGLMF_OUT) != 0 && (tgl_get_peer_type(M->to_id) == TGL_PEER_CHAT || tgl_get_peer_type(M->to_id) == TGL_PEER_GEO_CHAT))
 	{
 		assert(tgl_get_peer_id(M->from_id) != TLS->our_id  && "Message should not be from ourself!");
 		push(", \"peer\":");
 		push_peer (M->to_id);
-	} else if (!M->out && (tgl_get_peer_type(M->to_id) == TGL_PEER_USER || tgl_get_peer_type(M->to_id) == TGL_PEER_ENCR_CHAT)){
+	} else if (!(M->flags & TGLMF_OUT) != 0 && (tgl_get_peer_type(M->to_id) == TGL_PEER_USER || tgl_get_peer_type(M->to_id) == TGL_PEER_ENCR_CHAT)){
 		// assert(tgl_get_peer_id(M->to_id) != TLS->our_id && "Message should not be from ourself!");
 		push(", \"peer\":");
 		push_peer (M->from_id);
@@ -872,19 +911,22 @@ void push_message (struct tgl_message *M) {
 		// own message (or something missed)
 		push(", \"peer\": null");
 	}
-	push(", \"own\": %s, \"unread\":%s, \"date\":%i, \"service\":%s", format_bool(M->out), format_bool(M->unread), M->date, format_bool(M->service) );
-	if (!M->service) {
+	push(", \"own\": %s, \"unread\":%s, \"date\":%i, \"service\":%s", format_bool((M->flags & TGLMF_OUT) != 0), format_bool((M->flags & TGLMF_UNREAD) != 0), M->date, format_bool((M->flags & TGLMF_SERVICE) != 0) );
+	if (!(M->flags & TGLMF_SERVICE) != 0) {
+		push(",");
 		if (M->message_len > 0 && M->message) {
-			char *escaped_message = expand_escapes_alloc(M->message);
-			push(", \"text\": \"%s\", \"media\": null", escaped_message); // http://stackoverflow.com/a/3767300
-			free(escaped_message);
+			lua_add_string_field("text", M->message); // http://stackoverflow.com/a/3767300
+		} else {
+			lua_add_null_field("text");
 		}
 		if (M->media.type && M->media.type != tgl_message_media_none) {
-			push(", \"text\": null, \"media\":");
+			push(",\"media\":");
 			push_media(&M->media, &M->id);
+		} else {
+			push(",\"media\":null");
 		}
 	} else {
-		push(", \"action\": ");
+		push(",\"action\": ");
 		push_action(&(M->action));
 	}
 	// is no dict => no "}".
@@ -892,78 +934,82 @@ void push_message (struct tgl_message *M) {
 
 void push_action(struct tgl_message_action *action)
 {
-	push ("{\"type\":%d, \"text\":", action->type);
+	push ("{\"type\":\"");
 	switch (action->type) {
 		case tgl_message_action_none:
-			push("\"none\"");
+			push("none\"");
 			break;
 		case tgl_message_action_geo_chat_create:
-			push ("\"geochat created\"");
+			push ("geo_created\"");
 			break;
 		case tgl_message_action_geo_chat_checkin:
-			push ("\"checking in geochat\"");
+			push ("geo_checkin\"");
 			break;
 		case tgl_message_action_chat_create:
-			push ("\"created chat\", \"title\":\"%s\",\"members_num\":%d", action->title, action->user_num);
+			push ("chat_created\", \"title\":\"%s\",\"members_num\":%d", action->title, action->user_num);
 			break;
 		case tgl_message_action_chat_edit_title:
-			push ("\"changed chat title\",\"title\":\"%s\"", action->new_title);
+			push ("chat_rename\",\"title\":\"%s\"", action->new_title);
 			break;
 		case tgl_message_action_chat_edit_photo:
-			push ("\"changed chat photo\"");
+			push ("chat_change_photo\"");
 			break;
 		case tgl_message_action_chat_delete_photo:
-			push ("\"deleted chat photo\"");
+			push ("chat_delete_photo\"");
 			break;
 		case tgl_message_action_chat_add_user:
-			push ("\"added user to chat\",\"user\":");
+			push ("chat_add_user\",\"user\":");
 			push_peer (tgl_set_peer_id (TGL_PEER_USER, action->user));
 			push ("\n");
 			break;
+		case tgl_message_action_chat_add_user_by_link:
+			push ("chat_add_user_link\",\"link_issuer\":");
+			push_peer (tgl_set_peer_id (TGL_PEER_USER, action->user));
+			break;
 		case tgl_message_action_chat_delete_user:
-			push ("\"deleted user from chat\", \"user\":");
+			push ("chat_del_user\", \"user\":");
 			push_peer (tgl_set_peer_id (TGL_PEER_USER, action->user));
 			break;
 		case tgl_message_action_set_message_ttl:
-			push ("\"set secure chat timeout\", \"seconds\":%d", action->ttl);
+			push ("set_ttl\", \"seconds\":%d", action->ttl);
 			break;
 		case tgl_message_action_read_messages:
-			push ("\"marked messages read\",\"count\":%d", action->read_cnt);
+			push ("read\",\"count\":%d", action->read_cnt);
 			break;
 		case tgl_message_action_delete_messages:
-			push ("\"messages deleted\",\"count\":%d", action->delete_cnt);
+			push ("delete\",\"count\":%d", action->delete_cnt);
 			break;
 		case tgl_message_action_screenshot_messages:
-			push ("\"messages screenshoted\",\"count\":%d", action->screenshot_cnt);
+			push ("screenshot\",\"count\":%d", action->screenshot_cnt);
 			break;
 		case tgl_message_action_flush_history:
-			push ("\"cleared history\"");
+			push ("flush\"");
 			break;
 		case tgl_message_action_resend:
-			push ("\"resend query\"");
+			push ("resend\"");
 			break;
 		case tgl_message_action_notify_layer:
-			push ("\"updated layer\",\"layer\":%d", action->layer);
+			push ("set_layer\",\"layer\":%d", action->layer);
 			break;
 		case tgl_message_action_typing:
-			push ("\"typing\",\"status\":%d,\"text\":\"", action->typing);
+			push ("typing\",\"status\":%d,\"text\":\"", action->typing);
 			push_typing (action->typing);
 			push ("\"");
 			break;
 		case tgl_message_action_noop:
-			push ("\"noop\"");
+			push ("nop\"");
 			break;
 		case tgl_message_action_request_key:
-			push ("\"request rekey\", \"id\":\"%016llx\"", action->exchange_id);
+			push ("request_rekey\", \"id\":\"%016llx\"", action->exchange_id);
 			break;
 		case tgl_message_action_accept_key:
-			push ("\"accept rekey\", \"id\":\"%016llx\"", action->exchange_id);
+			push ("accept_rekey\", \"id\":\"%016llx\"", action->exchange_id);
 			break;
 		case tgl_message_action_commit_key:
-			push ("\"commit rekey\", \"id\":\"%016llx\"", action->exchange_id);
+			push ("commit_rekey\", \"id\":\"%016llx\"", action->exchange_id);
 			break;
 		case tgl_message_action_abort_key:
-			push ("\"abort rekey\", \"id\":\"%016llx\"", action->exchange_id);
+			push ("abort_rekey\", \"id\":\"%016llx\"", action->exchange_id);
 			break;
 	}
 	push("}");

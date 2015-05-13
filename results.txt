@@ -35,7 +35,9 @@ JSON Reference:
 	        "startup" (diff, what is not processed, but happened before the startup of this session)
 	        "new"     (That message was received since the CLI is running.)
         - flags: [int] yeah, no idea.
-        - forward: [peer] from who the message originally is, or [null] if not forwarded.
+        - forward: [peer/null] from who the message originally is, or [null] if not forwarded.
+        * reply_id: [int] (id of the original message?)
+        - mention: [bool] (?)
         - sender: [peer] who send it.
         - receiver: [peer] who can read it now. (should be either a group or the bot)
         - peer: [peer] or [null] where you want to reply to, either the group chat if it was in a group chat, else the user's chat (will be equal to either 'sender' or 'receiver'). should be [null] if the bot sent this message.
@@ -44,67 +46,68 @@ JSON Reference:
         - date: [int]
         - service: [bool] If it is a normal message (false) or stuff like username changes etc..
             false:
-                * text: [string] | either text or media
-                * media: [media] | either text or media
+                * text: [string] | either text or media, or both, like if the
+                * media: [media] |  text contains a url, creating a webpage media.
             true:
                 - type: [int]
-                - text: [string] a textual description of the type, see the comment:
-                > type / string:
-                   0 "none"
-                   1 "geochat created"
-                   2 "checking in geochat"
-                   3 "created chat"  a user created a new chat with you in it.
+                  "none"
+                  "geo_created" geochat created
+                  "geo_checkin" checking in geochat"
+                  "chat_created" a user created a new chat with you in it.
                       - title: [string] the chat's title
                       - members_num: [int] the count of initial added users
-                   4 "changed chat title"
+                  "chat_rename" changed chat title
                       - title: [string] the new title
-                   5 "changed chat photo"
-                   6 "added user to chat"
+                  "chat_change_photo" changed chat photo
+                  "chat_delete_photo" deleted chat photo
+                  "chat_add_user" added user to chat
                       - user: [peer] the new user
-                   7 "deleted user from chat"
+                  "chat_add_user_link"
+                      - link_issuer: [peer]
+                  "chat_del_user" deleted user from chat
                       - user: [peer] the deleted user
-                   8 "set secure chat timeout"
+                  "set_ttl" set secure chat timeout
                       - seconds [int] the ttl in seconds
-                   9 "marked messages read"
+                  "read" marked messages read
                       - count: [int] how many messages got marked as read
-                  10 "messages deleted"
+                  "delete" messages deleted
                       - count: [int] how many messages were deleted
-                  11 "messages screenshoted"
+                  "screenshot" messages screenshoted
                       - count: [int] probably, how many messages were on the screenshot
-                  12 "cleared history"
-                  13 "resend query"
-                  14 "updated layer"
+                  "flush" cleared(?) history
+                  "resend" resend query
+                  "set_layer" updated layer
                       - layer: [int]
-                  15 "typing"
+                  "typing"
                       - status [int]
                       - text [string]
-                             0 "doing nothing"
-                             1 "typing"
-                             2 "deleting typed message"
-                             3 "recording video"
-                             4 "uploading video"
-                             5 "recording audio"
-                             6 "uploading audio"
-                             7 "uploading photo"
-                             8 "uploading document"
-                             9 "choosing location"
-                            10 "choosing contact"
-                  17 "noop" (I have no idea what that is...)
-                  18 "request rekey"
-                        - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
-                     "accept rekey"
-                        - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
-                     "commit rekey"
-                        - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
-                     "abort rekey"
-                        - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
+                          0 "doing nothing"
+                          1 "typing"
+                          2 "deleting typed message"
+                          3 "recording video"
+                          4 "uploading video"
+                          5 "recording audio"
+                          6 "uploading audio"
+                          7 "uploading photo"
+                          8 "uploading document"
+                          9 "choosing location"
+                         10 "choosing contact"
+                  "nop" (I have no idea what that is... The used enum is 'tgl_message_action_noop'
+                  "request_rekey" request rekey
+                      - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
+                  "accept_rekey" accept rekey
+                      - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
+                  "commit_rekey" commit rekey
+                      - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
+                  "abort_rekey" abort rekey
+                      - id [string] unsigned long long int in hexadecimal notation occupying a minimum of 16 positions, padded with 0
 
 
 [media]
     - type:
         "photo"
             - encrypted: [bool]
-            * caption: original file name | if present on non encrypted photo
+            - caption: [string] user added text, can be empty.
         "document"
             - encrypted: [bool]
             - document: [string] Type of the document
@@ -113,23 +116,37 @@ JSON Reference:
                 "video"
                 "sticker"
                 "document" (everything else)
-            * caption: original file name as [string]   | if value present
+            * file_name: original file name as [string] | if value present (always?)
             * mime: [string] MIME-type, eg. "image/png" | if value present
-            * dimension: [size] pixel width and height  | if value present
-            * duration: [int] in seconds                | if value present
-            - size: human readable [string] e.g. "1MiB
+            * dimension: [size] pixel width and height  | if value present, probably if images/video
+            * duration: [int] in seconds                | if value present, probably if audio/video
+            - size: human readable [string] e.g. "1MiB"
             - bytes: [int] of the bytes e.g. 1243380
         "contact"
-            - phone: [string] often starting with "+" sign! (the formatting depends on the sending client, the allowed characters are digits, the plus sign, "*","#" (so you can actually send "+++++" as number))
+            - phone: [string] often starting with "+" sign! (the formatting depends on the sending client, the allowed characters are digits, the plus sign, "*","#" (so you can actually get "+++++" as number))
             - first_name: [string]
             - last_name: [string]
             - user_id: [int] telegram user id, or 0 if not a telegram user.
         "geo"
-            - longitude: [int] (6 digits after the decimal)
-            - latitude": [int] (same formalt as longitude)
+            - longitude: [long] (6 digits after the decimal)
+            - latitude": [long] (same format as longitude)
             - google: [string] Link to google maps, format "https://maps.google.com/?q=12.123456,12.123456"
+        "venue": (is just a fancy geo)
+            - longitude: [long] see "geo"
+            - latitude": [long] see "geo"
+            - google: [string]  see "geo"
+            - title: [string]
+            - address: [string]
+            - provider: [string] like "foursquare"
+            - venue_id: [string] seems to be some hash thingie.
+        "webpage"
+            - url: [string] the detected URL
+            - title: [string] Page title
+            - description: [string]
+            - author: [string] often not given.
         "unsupported": well...
         "???": It is not even unsupported. Dealing with serious shit!
+            - type_id: [int] Please file a bug report including this number.
 
 [fwd]
     - sender: [peer] who it is from
@@ -139,16 +156,21 @@ JSON Reference:
     - id [int] user/group id
     - type: [string]
         "user"
+           - first_name: [string]                    | Can be empty string.
+           - last_name: [string]                     | Can be empty string.  ( try dialog_list
+           - real_first_name: [string]               | Can be empty string.    or -W parameter )
+           - real_last_name: [string]                | Can be empty string.
+           - phone: [string] without the leading "+" | Can be empty string.
+           - username: [string] @username            | Can be empty string.
         "group"
+           - title: [string]
+           - members_num: [int]
+           * members: [list of peer]        | only if given.
         "encr_chat"
+           - user: [peer]
     - cmd: [string]: use this to send a message to the peer. Will be e.g. "user#1234"
-    - print_name: The name of the user, as it should be displayed. [string] or [null] if not cached yet.
-    * first_name: [string]                    | only if cached.
-    * last_name: [string]                     | only if cached.  ( try dialog_list
-    * real_first_name: [string]               | only if cached.    or -W parameter )
-    * real_last_name: [string]                | only if cached.
-    * phone: [string] without the leading "+" | only if cached.
-    - flags [int]: something?
+    - print_name: [string] or [null]  The name of the user, as it should be displayed.  Null if not created.
+    * flags [int]: something? | only if peer is created.
 
 [size]
     - width: [int] mostly used for px
