@@ -120,6 +120,7 @@ char* malloc_formated(char const *format, ...);
 
 
 void push_message (struct tgl_message *M);
+void push_chat_info (struct tgl_chat *C);
 static void push (const char *format, ...) __attribute__ ((format (printf, 1, 2)));
 //#define push(...) answer_add_printf (__VA_ARGS__)
 void print_no_address() {
@@ -233,6 +234,18 @@ void lua_new_msg (struct tgl_message *M)
 	}
 	push("}");
 	answer_send();
+}
+
+void lua_new_chat_info (struct tgl_chat *C)
+{
+        // tgl_peer_t *U = (void *)C;
+        
+        answer_start();
+        printf("New Chat info...\n");
+        push("{\"event\":\"chat_info\",");
+        push_chat_info (C);
+        push("}");
+      	answer_send();
 }
 
 void push_freshness()
@@ -609,24 +622,26 @@ void push_user (tgl_peer_t *P) {
 	free(escaped_caption);
 	push("\"phone\":\"%s\"", format_string_or_null(P->user.phone));
 }
-void push_chat (tgl_peer_t *P) {
-	assert (P->chat.title);
-	char *escaped_caption = expand_escapes_alloc(P->chat.title);
-	push("\"title\":\"%s\", \"members_num\":%i", escaped_caption, P->chat.users_num);
+void push_chat_info (struct tgl_chat *C) {
+        assert (C->title);
+	char *escaped_caption = expand_escapes_alloc(C->title);
+	push("\"title\":\"%s\", \"members_num\":%i", escaped_caption, C->users_num);
 	free(escaped_caption);
-	if (P->chat.user_list) {
+	if (C->user_list) {
 		push(", \"members\": [");
 		int i;
-		for (i = 0; i < P->chat.users_num; i++) {
+		for (i = 0; i < C->users_num; i++) {
 			if (i != 0) {
 				push(", ");
 			}
-			tgl_peer_id_t id = TGL_MK_USER (P->chat.user_list[i].user_id);
+			tgl_peer_id_t id = TGL_MK_USER (C->user_list[i].user_id);
 			push_peer (id);
-
 		}
 		push("]");
-	} // end if
+	}
+}
+void push_chat (tgl_peer_t *P) {
+	push_chat_info(&P->chat);
 }
 
 void push_encr_chat (tgl_peer_t *P) {

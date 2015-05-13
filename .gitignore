@@ -17,3 +17,5 @@ debian/files
 debian/telegram-cli/*
 debian/telegram-cli.debhelper.log
 debian/telegram-cli.substvars
+.directory
+*.kate-swp
