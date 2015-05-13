@@ -1,4 +1,22 @@
+# The Custom CLI for Pytg2 will be discontinued, as the unmodified one will replace the needed features.
+
+# Pytg2 will update for this.
+
+> The original telegram CLI implemented json support, so **pytg2 will update** soon to use that instead.
+> This will make installment a lot easier, and no delays with merges on my side.
+> 
+> This is probably the last stable development version.
+> (A stable working development version :smile:)
+> This is left in this last working state, as soon as pytg2 is updated. 
+
+
 ## Telejson (formaly called tg-for-pytg2)
+
+This is a modified version of [vysheng's Telegram-CLI](https://github.com/vysheng/tg/), which sends you the events as json.    
+
+The only modified file is ```tg-lua.c``` and ```tg-lua.h``` so changes in the original repo are *very* easy to maintain and merge,
+resulting in almost instant updates.
+
 
 # Changed Project URL: [https://github.com/luckydonald/telejson](https://github.com/luckydonald/telejson)
 
@@ -6,8 +24,6 @@ To update your local clone, type
 ``` sh
 git remote set-url origin https://github.com/luckydonald/telejson.git
 ```
-
-Modified version of Telegram-CLI, which sends you the events as json.    
 
 You provide the ip/port you are listening for new messages with the -s switch:    
 For example: ```telegram-cli -s 127.0.0.1:4458```
