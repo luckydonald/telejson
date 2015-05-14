@@ -243,6 +243,7 @@ void lua_new_chat_info (struct tgl_chat *C)
         answer_start();
         printf("New Chat info...\n");
         push("{\"event\":\"chat_info\",");
+        push("\"id\": %d,", tgl_get_peer_id (C->id));
         push_chat_info (C);
         push("}");
       	answer_send();
@@ -626,7 +627,6 @@ void push_chat_info (struct tgl_chat *C) {
         assert (C->title);
 	char *escaped_caption = expand_escapes_alloc(C->title);
 	push("\"title\":\"%s\", \"members_num\":%i", escaped_caption, C->users_num);
-        push("\"id\": %d,", tgl_get_peer_id (C->id));
 	free(escaped_caption);
 	if (C->user_list) {
 		push(", \"members\": [");
