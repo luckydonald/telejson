@@ -244,6 +244,7 @@ void lua_new_chat_info (struct tgl_chat *C)
         answer_start();
         printf("New Chat info...\n");
         push("{\"event\":\"chat_info\",");
+        push("\"id\": %d,", tgl_get_peer_id (C->id));
         push_chat_info (C);
         push("}");
       	answer_send();
